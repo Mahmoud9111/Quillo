@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { searchBookSegments } from '@/lib/actions/book.actions';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 // Helper function to process book search logic

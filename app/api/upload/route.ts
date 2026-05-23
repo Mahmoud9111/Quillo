@@ -4,6 +4,7 @@ import {auth} from "@clerk/nextjs/server";
 import {MAX_FILE_SIZE} from "@/lib/constants";
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export async function POST(request: Request): Promise<NextResponse> {
