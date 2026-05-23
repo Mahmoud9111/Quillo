@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 
 import { searchBookSegments } from '@/lib/actions/book.actions';
 
+export const runtime = 'nodejs';
+export const maxDuration = 30;
+
 // Helper function to process book search logic
 async function processBookSearch(bookId: unknown, query: unknown) {
     // Validate inputs before conversion to prevent null/undefined becoming "null"/"undefined" strings

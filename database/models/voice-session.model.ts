@@ -1,4 +1,4 @@
-import { model, Schema, models } from "mongoose";
+import mongoose, { model, Schema } from "mongoose";
 import { IVoiceSession } from "@/types";
 
 const VoiceSessionSchema = new Schema<IVoiceSession>({
@@ -7,11 +7,13 @@ const VoiceSessionSchema = new Schema<IVoiceSession>({
     startedAt: { type: Date, required: true, default: Date.now },
     endedAt: { type: Date },
     durationSeconds: { type: Number, default: 0, required: true },
-    billingPeriodStart: { type: Date, required: true, index:  true },
 }, { timestamps: true });
 
-VoiceSessionSchema.index({ clerkId: 1, billingPeriodStart: 1 });
+// Force-recompile in dev so schema edits (HMR) take effect without a server restart.
+if (process.env.NODE_ENV !== 'production' && mongoose.models.VoiceSession) {
+    delete mongoose.models.VoiceSession;
+}
 
-const VoiceSession = models.VoiceSession || model<IVoiceSession>('VoiceSession', VoiceSessionSchema);
+const VoiceSession = mongoose.models.VoiceSession || model<IVoiceSession>('VoiceSession', VoiceSessionSchema);
 
 export default VoiceSession;

@@ -6,25 +6,17 @@ import {IBook} from "@/types";
 import Image from "next/image";
 import Transcript from "@/components/Transcript";
 import {toast} from "sonner";
-
-import {useRouter} from "next/navigation";
 import {useEffect} from "react";
 
 const VapiControls = ({ book }: { book: IBook }) => {
-    const { status, isActive, messages, currentMessage, currentUserMessage, duration, start, stop, clearError, limitError, isBillingError, maxDurationSeconds } = useVapi(book)
-    const router = useRouter();
+    const { status, isActive, messages, currentMessage, currentUserMessage, duration, start, stop, clearError, limitError, maxDurationSeconds } = useVapi(book)
 
     useEffect(() => {
         if (limitError) {
             toast.error(limitError);
-            if (isBillingError) {
-                router.push("/subscriptions");
-            } else {
-                router.push("/");
-            }
             clearError();
         }
-    }, [isBillingError, limitError, router, clearError]);
+    }, [limitError, clearError]);
 
     const formatDuration = (seconds: number) => {
         const mins = Math.floor(seconds / 60);

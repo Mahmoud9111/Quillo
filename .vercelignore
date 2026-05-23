@@ -1,0 +1,9 @@
+.git
+.idea
+.claude
+.ai
+.next
+node_modules
+*.tsbuildinfo
+.output.txt
+public/readme

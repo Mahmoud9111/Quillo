@@ -6,7 +6,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Vapi from '@vapi-ai/web';
 import { useAuth } from '@clerk/nextjs';
 
-import { useSubscription } from '@/hooks/useSubscription';
 import { ASSISTANT_ID, DEFAULT_VOICE, VOICE_SETTINGS } from '@/lib/constants';
 import { getVoice } from '@/lib/utils';
 import { IBook, Messages } from '@/types';
@@ -40,9 +39,10 @@ function getVapi() {
 
 export type CallStatus = 'idle' | 'connecting' | 'starting' | 'listening' | 'thinking' | 'speaking';
 
+const MAX_SESSION_MINUTES = 60;
+
 export function useVapi(book: IBook) {
     const { userId } = useAuth();
-    const { limits } = useSubscription();
 
     const [status, setStatus] = useState<CallStatus>('idle');
     const [messages, setMessages] = useState<Messages[]>([]);
@@ -50,15 +50,14 @@ export function useVapi(book: IBook) {
     const [currentUserMessage, setCurrentUserMessage] = useState('');
     const [duration, setDuration] = useState(0);
     const [limitError, setLimitError] = useState<string | null>(null);
-    const [isBillingError, setIsBillingError] = useState(false);
 
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const startTimeRef = useRef<number | null>(null);
     const sessionIdRef = useRef<string | null>(null);
     const isStoppingRef = useRef(false);
+    const connectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Keep refs in sync with latest values for use in callbacks
-    const maxDurationSeconds = limits?.maxDurationPerSession ? limits.maxDurationPerSession * 60 : (15 * 60);
+    const maxDurationSeconds = MAX_SESSION_MINUTES * 60;
     const maxDurationRef = useLatestRef(maxDurationSeconds);
     const durationRef = useLatestRef(duration);
     const voice = book.persona || DEFAULT_VOICE;
@@ -68,6 +67,10 @@ export function useVapi(book: IBook) {
         const handlers = {
             'call-start': () => {
                 isStoppingRef.current = false;
+                if (connectTimeoutRef.current) {
+                    clearTimeout(connectTimeoutRef.current);
+                    connectTimeoutRef.current = null;
+                }
                 setStatus('starting'); // AI speaks first, wait for it
                 setCurrentMessage('');
                 setCurrentUserMessage('');
@@ -86,7 +89,7 @@ export function useVapi(book: IBook) {
                             setLimitError(
                                 `Session time limit (${Math.floor(
                                     maxDurationRef.current / SECONDS_PER_MINUTE,
-                                )} minutes) reached. Upgrade your plan for longer sessions.`,
+                                )} minutes) reached.`,
                             );
                         }
                     }
@@ -108,7 +111,7 @@ export function useVapi(book: IBook) {
                 // End session tracking
                 if (sessionIdRef.current) {
                     endVoiceSession(sessionIdRef.current, durationRef.current).catch((err) =>
-                        console.error('Failed to end voice session:', err),
+                        console.warn('Failed to end voice session:', err),
                     );
                     sessionIdRef.current = null;
                 }
@@ -170,33 +173,75 @@ export function useVapi(book: IBook) {
                 }
             },
 
-            error: (error: Error) => {
-                console.error('Vapi error:', error);
-                // Don't reset isStoppingRef here - delayed events may still fire
+            error: (error: unknown) => {
+                // Vapi can emit Errors, plain objects, or nested shapes like
+                // { error: { type, msg }, action, errorMsg }. Extract a readable string.
+                const extractMessage = (e: unknown): string => {
+                    if (!e) return '';
+                    if (typeof e === 'string') return e;
+                    if (e instanceof Error) return e.message;
+                    if (typeof e === 'object') {
+                        const obj = e as Record<string, unknown>;
+                        const nested =
+                            (obj.errorMsg as string) ||
+                            (obj.message as string) ||
+                            (obj.msg as string) ||
+                            (typeof obj.error === 'object' ? extractMessage(obj.error) : (obj.error as string)) ||
+                            (obj.type as string) ||
+                            '';
+                        return nested;
+                    }
+                    return '';
+                };
+
+                const errorMessage = extractMessage(error);
+                // Use warn (not error) so Next.js dev overlay doesn't surface it as "Unhandled error"
+                try {
+                    console.warn(
+                        'Vapi error:',
+                        errorMessage || '(no message)',
+                        JSON.stringify(error, Object.getOwnPropertyNames(error ?? {})),
+                    );
+                } catch {
+                    console.warn('Vapi error (unserializable):', errorMessage || '(no message)');
+                }
+
+                // Empty error object often fires right after a normal stop — ignore it
+                if (!errorMessage && isStoppingRef.current) {
+                    return;
+                }
+
                 setStatus('idle');
                 setCurrentMessage('');
                 setCurrentUserMessage('');
 
-                // Stop timer on error
                 if (timerRef.current) {
                     clearInterval(timerRef.current);
                     timerRef.current = null;
                 }
+                if (connectTimeoutRef.current) {
+                    clearTimeout(connectTimeoutRef.current);
+                    connectTimeoutRef.current = null;
+                }
 
-                // End session tracking on error
                 if (sessionIdRef.current) {
                     endVoiceSession(sessionIdRef.current, durationRef.current).catch((err) =>
-                        console.error('Failed to end voice session on error:', err),
+                        console.warn('Failed to end voice session on error:', err),
                     );
                     sessionIdRef.current = null;
                 }
 
-                // Show user-friendly error message
-                const errorMessage = error.message?.toLowerCase() || '';
-                if (errorMessage.includes('timeout') || errorMessage.includes('silence')) {
+                const lower = errorMessage.toLowerCase();
+                if (lower.includes('failed to fetch') || lower.includes('start-method-error')) {
+                    setLimitError(
+                        'Cannot reach voice servers (api.vapi.ai). Disable ad blockers/VPN for this site, or try an incognito window.',
+                    );
+                } else if (lower.includes('timeout') || lower.includes('silence')) {
                     setLimitError('Session ended due to inactivity. Click the mic to start again.');
-                } else if (errorMessage.includes('network') || errorMessage.includes('connection')) {
+                } else if (lower.includes('network') || lower.includes('connection') || lower.includes('ejected')) {
                     setLimitError('Connection lost. Please check your internet and try again.');
+                } else if (lower.includes('meeting') || lower.includes('room')) {
+                    setLimitError('Voice room ended. Click the mic to start again.');
                 } else {
                     setLimitError('Session ended unexpectedly. Click the mic to start again.');
                 }
@@ -215,7 +260,7 @@ export function useVapi(book: IBook) {
             if (sessionIdRef.current) {
                 getVapi().stop();
                 endVoiceSession(sessionIdRef.current, durationRef.current).catch((err) =>
-                    console.error('Failed to end voice session on unmount:', err),
+                    console.warn('Failed to end voice session on unmount:', err),
                 );
                 sessionIdRef.current = null;
             }
@@ -224,6 +269,7 @@ export function useVapi(book: IBook) {
                 getVapi().off(event as keyof typeof handlers, handler as () => void);
             });
             if (timerRef.current) clearInterval(timerRef.current);
+            if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
         };
     }, []);
 
@@ -234,58 +280,95 @@ export function useVapi(book: IBook) {
         }
 
         setLimitError(null);
-        setIsBillingError(false);
         setStatus('connecting');
 
         try {
-            // Check session limits and create session record
             const result = await startVoiceSession(userId, book._id);
 
             if (!result.success) {
-                setLimitError(result.error || 'Session limit reached. Please upgrade your plan.');
-                setIsBillingError(!!result.isBillingError);
+                setLimitError(result.error || 'Failed to start voice session.');
                 setStatus('idle');
                 return;
             }
 
             sessionIdRef.current = result.sessionId || null;
-            // Note: Server-returned maxDurationMinutes is informational only
-            // The actual limit is enforced by useLatestRef(limits.maxSessionMinutes * 60)
 
             const firstMessage = `Hey, good to meet you. Quick question before we dive in - have you actually read ${book.title} yet, or are we starting fresh?`;
 
-            await getVapi().start(ASSISTANT_ID, {
-                firstMessage,
-                variableValues: {
-                    title: book.title,
-                    author: book.author,
-                    bookId: book._id,
-                },
-                voice: {
-                    provider: '11labs' as const,
-                    voiceId: getVoice(voice).id,
-                    model: 'eleven_turbo_v2_5' as const,
-                    stability: VOICE_SETTINGS.stability,
-                    similarityBoost: VOICE_SETTINGS.similarityBoost,
-                    style: VOICE_SETTINGS.style,
-                    useSpeakerBoost: VOICE_SETTINGS.useSpeakerBoost,
-                },
-            });
+            // Fail fast if call-start hasn't fired within 20s — Vapi's internal retry can otherwise hang ~60s
+            connectTimeoutRef.current = setTimeout(() => {
+                if (sessionIdRef.current) {
+                    try { getVapi().stop(); } catch { /* no active call */ }
+                    endVoiceSession(sessionIdRef.current, 0).catch(() => {});
+                    sessionIdRef.current = null;
+                }
+                setStatus('idle');
+                setLimitError(
+                    'Cannot reach voice servers (api.vapi.ai). Disable ad blockers/VPN for this site, or try an incognito window.',
+                );
+            }, 20000);
+
+            // Vapi can reject with undefined on network failures — catch directly so the unhandled
+            // rejection doesn't reach Next.js's dev overlay as "Unhandled error. (undefined)".
+            await getVapi()
+                .start(ASSISTANT_ID, {
+                    firstMessage,
+                    variableValues: {
+                        title: book.title,
+                        author: book.author,
+                        bookId: book._id,
+                    },
+                    voice: {
+                        provider: '11labs' as const,
+                        voiceId: getVoice(voice).id,
+                        model: 'eleven_turbo_v2_5' as const,
+                        stability: VOICE_SETTINGS.stability,
+                        similarityBoost: VOICE_SETTINGS.similarityBoost,
+                        style: VOICE_SETTINGS.style,
+                        useSpeakerBoost: VOICE_SETTINGS.useSpeakerBoost,
+                    },
+                })
+                .catch((err: unknown) => {
+                    const msg =
+                        err instanceof Error
+                            ? err.message
+                            : err && typeof err === 'object' && 'message' in err
+                              ? String((err as { message: unknown }).message)
+                              : err
+                                ? String(err)
+                                : '';
+                    console.warn('Vapi start failed:', msg || '(empty rejection — likely network)');
+                    throw new Error(msg || 'failed to fetch');
+                });
         } catch (err) {
-            console.error('Failed to start call:', err);
+            if (connectTimeoutRef.current) {
+                clearTimeout(connectTimeoutRef.current);
+                connectTimeoutRef.current = null;
+            }
             setStatus('idle');
-            setLimitError('Failed to start voice session. Please try again.');
+            const msg = err instanceof Error ? err.message : String(err);
+            const lower = msg.toLowerCase();
+            if (!msg || lower.includes('failed to fetch') || lower.includes('network')) {
+                setLimitError(
+                    'Cannot reach voice servers (api.vapi.ai). Disable ad blockers/VPN for this site, or try an incognito window.',
+                );
+            } else {
+                setLimitError('Failed to start voice session. Please try again.');
+            }
         }
     }, [book._id, book.title, book.author, voice, userId]);
 
     const stop = useCallback(() => {
         isStoppingRef.current = true;
+        if (connectTimeoutRef.current) {
+            clearTimeout(connectTimeoutRef.current);
+            connectTimeoutRef.current = null;
+        }
         getVapi().stop();
     }, []);
 
     const clearError = useCallback(() => {
         setLimitError(null);
-        setIsBillingError(false);
     }, []);
 
     const isActive =
@@ -293,12 +376,6 @@ export function useVapi(book: IBook) {
         status === 'listening' ||
         status === 'thinking' ||
         status === 'speaking';
-
-    // Calculate remaining time
-    // const maxDurationSeconds = limits.maxSessionMinutes * SECONDS_PER_MINUTE;
-    // const remainingSeconds = Math.max(0, maxDurationSeconds - duration);
-    // const showTimeWarning =
-    //     isActive && remainingSeconds <= TIME_WARNING_THRESHOLD && remainingSeconds > 0;
 
     return {
         status,
@@ -310,12 +387,8 @@ export function useVapi(book: IBook) {
         start,
         stop,
         limitError,
-        isBillingError,
         maxDurationSeconds,
         clearError,
-        // maxDurationSeconds,
-        // remainingSeconds,
-        // showTimeWarning,
     };
 }
 

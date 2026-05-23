@@ -44,7 +44,6 @@ export interface IVoiceSession extends Document {
     startedAt: Date;
     endedAt?: Date;
     durationSeconds: number;
-    billingPeriodStart: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -116,23 +115,10 @@ export interface FileUploadFieldProps<T extends FieldValues> {
     placeholder: string;
     hint: string;
 }
-import {PLANS, PlanType} from "@/lib/subscription-constants";
-
-export interface SessionCheckResult {
-    allowed: boolean;
-    currentCount: number;
-    limit: number;
-    plan: PlanType;
-    maxDurationMinutes: number;
-    error?: string;
-}
-
 export interface StartSessionResult {
     success: boolean;
     sessionId?: string;
-    maxDurationMinutes?: number;
     error?: string;
-    isBillingError?: boolean;
 }
 
 export interface EndSessionResult {

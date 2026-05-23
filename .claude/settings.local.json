@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(npm install)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri http://localhost:3000 -UseBasicParsing -TimeoutSec 30; \"STATUS=$\\($r.StatusCode\\)\" } catch { \"ERROR: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(git remote set-url origin https://github.com/Mahmoud9111/Quillo.git)",
+      "PowerShell(npm run dev)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3000\" -UseBasicParsing -TimeoutSec 30; \"STATUS=$\\($r.StatusCode\\) LEN=$\\($r.Content.Length\\)\" } catch { \"ERR: $_\" })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3000/sign-in\" -UseBasicParsing -TimeoutSec 30; \"SIGN-IN=$\\($r.StatusCode\\)\" } catch { \"ERR: $_\" })",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -First 5 OwningProcess, State; $procs = Get-Process -Id 44312 -ErrorAction SilentlyContinue; if \\($procs\\) { \"PID 44312 still alive: $\\($procs.ProcessName\\)\" } else { \"PID 44312 gone\" })",
+      "PowerShell(npx tsc --noEmit 2>&1)"
+    ]
+  }
+}
