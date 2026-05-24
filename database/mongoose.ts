@@ -16,7 +16,18 @@ export const connectToDatabase = async () => {
     if (!MONGODB_URI) throw new Error('Please define the MONGODB_URI environment variable');
 
     if (!cached.promise) {
-        cached.promise = mongoose.connect(MONGODB_URI, { bufferCommands: false });
+        cached.promise = mongoose.connect(MONGODB_URI, {
+            bufferCommands: false,
+            // Serverless: small pool so a single warm lambda doesn't hog Atlas connections,
+            // but >1 so concurrent server actions on the same instance don't serialize.
+            maxPoolSize: 5,
+            minPoolSize: 0,
+            // Fail fast on cold starts instead of hanging the request for 30s default.
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 20000,
+            // Cuts wire payload to/from Atlas. zlib ships with Node, no extra dep needed.
+            compressors: ['zlib'],
+        });
     }
 
     try {

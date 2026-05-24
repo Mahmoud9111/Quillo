@@ -6,17 +6,17 @@ import {escapeRegex, generateSlug, serializeData} from "@/lib/utils";
 import Book from "@/database/models/book.model";
 import BookSegment from "@/database/models/book-segment.model";
 import mongoose from "mongoose";
+import { auth } from "@clerk/nextjs/server";
 
 export const getAllBooks = async (search?: string) => {
     try {
-        await connectToDatabase();
-
-        const { auth } = await import("@clerk/nextjs/server");
+        // Check auth before hitting Mongo — saves the connect cost on unauth'd hits.
         const { userId } = await auth();
-
         if (!userId) {
             return { success: false, error: "Unauthorized", data: [] };
         }
+
+        await connectToDatabase();
 
         const query: Record<string, unknown> = { clerkId: userId };
 
@@ -29,7 +29,11 @@ export const getAllBooks = async (search?: string) => {
             ];
         }
 
-        const books = await Book.find(query).sort({ createdAt: -1 }).lean();
+        // Project only the fields BookCard renders — fileURL/blob keys are large strings.
+        const books = await Book.find(query)
+            .select('_id title author coverURL slug createdAt')
+            .sort({ createdAt: -1 })
+            .lean();
 
         return {
             success: true,
@@ -85,7 +89,6 @@ export const createBook = async (data: CreateBook) => {
             }
         }
 
-        const { auth } = await import("@clerk/nextjs/server");
         const { userId } = await auth();
 
         if (!userId || userId !== data.clerkId) {
@@ -110,14 +113,12 @@ export const createBook = async (data: CreateBook) => {
 
 export const getBookBySlug = async (slug: string) => {
     try {
-        await connectToDatabase();
-
-        const { auth } = await import("@clerk/nextjs/server");
         const { userId } = await auth();
-
         if (!userId) {
             return { success: false, error: "Unauthorized" };
         }
+
+        await connectToDatabase();
 
         const book = await Book.findOne({ slug, clerkId: userId }).lean();
 
