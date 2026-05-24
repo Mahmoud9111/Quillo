@@ -17,7 +17,7 @@ import { useAuth } from "@clerk/nextjs";
 import { toast } from 'sonner';
 import {checkBookExists, createBook, saveBookSegments} from "@/lib/actions/book.actions";
 import {useRouter} from "next/navigation";
-import {parsePDFFile} from "@/lib/utils";
+import {generateSlug, parsePDFFile} from "@/lib/utils";
 import {upload} from "@vercel/blob/client";
 
 const UploadForm = () => {
@@ -60,7 +60,9 @@ const UploadForm = () => {
                 return;
             }
 
-            const fileTitle = data.title.replace(/\s+/g, '-').toLowerCase();
+            // Vercel Blob rejects pathnames with URL-reserved characters (:, ?, #, etc.),
+            // returning a misleading "Access denied" 403. Slug it to letters/digits/hyphens.
+            const fileTitle = generateSlug(data.title) || 'book';
             const pdfFile = data.pdfFile;
 
             const parsedPDF = await parsePDFFile(pdfFile);

@@ -8,11 +8,17 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export async function POST(request: Request): Promise<NextResponse> {
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
+        console.error('Upload error: BLOB_READ_WRITE_TOKEN is not configured');
+        return NextResponse.json({ error: 'Blob storage is not configured' }, { status: 500 });
+    }
+
     try {
         const body = (await request.json()) as HandleUploadBody;
 
         const jsonResponse = await handleUpload({
-            token: process.env.BLOB_READ_WRITE_TOKEN,
+            token,
             body,
             request,
             onBeforeGenerateToken: async () => {
@@ -38,9 +44,12 @@ export async function POST(request: Request): Promise<NextResponse> {
         return NextResponse.json(jsonResponse)
     } catch (e) {
         const message = e instanceof Error ? e.message : "An unknown error occurred";
-        const status = message.includes('Unauthorized') ? 401 : 500;
         console.error('Upload error', e);
-        const clientMessage = status === 401 ? 'Unauthorized' : 'Upload failed';
-        return NextResponse.json({ error: clientMessage }, { status });
+        if (message.includes('Unauthorized')) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        // Surface the real reason (bad token, invalid pathname, size limit, etc.)
+        // so the client toast and Vercel logs both point at the cause.
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }
