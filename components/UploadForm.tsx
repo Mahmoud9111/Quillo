@@ -135,7 +135,8 @@ const UploadForm = () => {
         } catch (error) {
             console.error(error);
 
-            toast.error("Failed to upload book. Please try again later.");
+            const message = error instanceof Error ? error.message : "Failed to upload book. Please try again later.";
+            toast.error(message);
         } finally {
             setIsSubmitting(false);
         }
