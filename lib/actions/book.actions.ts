@@ -8,6 +8,11 @@ import BookSegment from "@/database/models/book-segment.model";
 import mongoose from "mongoose";
 import { auth } from "@clerk/nextjs/server";
 
+// Server actions returned to client components get serialized — raw Error
+// instances survive in a shape that crashes React when rendered (#31).
+const toErrorMessage = (e: unknown): string =>
+    e instanceof Error ? e.message : typeof e === 'string' ? e : 'Unknown error';
+
 export const getAllBooks = async (search?: string) => {
     try {
         // Check auth before hitting Mongo — saves the connect cost on unauth'd hits.
@@ -42,7 +47,7 @@ export const getAllBooks = async (search?: string) => {
     } catch (e) {
         console.error('Error connecting to database', e);
         return {
-            success: false, error: e
+            success: false, error: toErrorMessage(e), data: []
         }
     }
 }
@@ -68,7 +73,7 @@ export const checkBookExists = async (title: string) => {
     } catch (e) {
         console.error('Error checking book exists', e);
         return {
-            exists: false, error: e
+            exists: false, error: toErrorMessage(e)
         }
     }
 }
@@ -106,7 +111,7 @@ export const createBook = async (data: CreateBook) => {
 
         return {
             success: false,
-            error: e,
+            error: toErrorMessage(e),
         }
     }
 }
@@ -133,7 +138,7 @@ export const getBookBySlug = async (slug: string) => {
     } catch (e) {
         console.error('Error fetching book by slug', e);
         return {
-            success: false, error: e
+            success: false, error: toErrorMessage(e)
         }
     }
 }
@@ -163,7 +168,7 @@ export const saveBookSegments = async (bookId: string, clerkId: string, segments
 
         return {
             success: false,
-            error: e,
+            error: toErrorMessage(e),
         }
     }
 }
