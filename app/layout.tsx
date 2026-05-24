@@ -19,9 +19,26 @@ const monaSans = Mona_Sans({
     display: 'swap'
 })
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "http://localhost:3000");
+
 export const metadata: Metadata = {
-  title: "Bookified",
-  description: "Transform your books into interactive AI conversations. Upload PDFs, and chat with your books using voice.",
+  metadataBase: new URL(siteUrl),
+  title: "Quillo",
+  description:
+    "Transform your books into interactive AI conversations. Upload PDFs, and chat with your books using voice.",
+  openGraph: {
+    title: "Quillo",
+    description:
+      "Transform your books into interactive AI conversations. Upload PDFs, and chat with your books using voice.",
+    type: "website",
+  },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({

@@ -50,8 +50,31 @@ function parseArgs(args: unknown): Record<string, unknown> {
     return args as Record<string, unknown>;
 }
 
+// Timing-safe string compare (avoids early-exit length leaks)
+function safeEqual(a: string, b: string): boolean {
+    if (a.length !== b.length) return false;
+    let mismatch = 0;
+    for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return mismatch === 0;
+}
+
 export async function POST(request: Request) {
     try {
+        const expectedSecret = process.env.VAPI_SERVER_SECRET;
+        if (!expectedSecret) {
+            console.error('VAPI_SERVER_SECRET is not configured');
+            return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+        }
+
+        const providedSecret =
+            request.headers.get('x-vapi-secret') ||
+            request.headers.get('x-vapi-signature') ||
+            '';
+
+        if (!providedSecret || !safeEqual(providedSecret, expectedSecret)) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const body = await request.json();
 
         console.log('Vapi search-book request:', JSON.stringify(body, null, 2));

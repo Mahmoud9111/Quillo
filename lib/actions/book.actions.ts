@@ -167,9 +167,18 @@ export const saveBookSegments = async (bookId: string, clerkId: string, segments
     }
 }
 
-// Searches book segments using MongoDB text search with regex fallback
+// Searches book segments using MongoDB text search with regex fallback.
+// NOTE: This is exported from a 'use server' module, so it's reachable as a
+// Next.js Server Action from any browser. The Vapi webhook is the legitimate
+// caller — when invoked from elsewhere there's no user context to authorize
+// against, so we rely on the unguessable bookId (Mongo ObjectId). If you ever
+// need to call this from the client, add a Clerk auth check here.
 export const searchBookSegments = async (bookId: string, query: string, limit: number = 5) => {
     try {
+        if (!mongoose.Types.ObjectId.isValid(bookId)) {
+            return { success: false, error: 'Invalid bookId', data: [] };
+        }
+
         await connectToDatabase();
 
         console.log(`Searching for: "${query}" in book ${bookId}`);
